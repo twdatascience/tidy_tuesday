@@ -1,0 +1,189 @@
+---
+title: "Tour de France"
+subtitle: "Tidy Tuesday Analysis"
+author: "Tyler Wilson"
+date: "5/7/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# xaringan::infinite_moon_reader()
+```
+
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidytext)
+library(caret)
+
+set.seed(42)
+
+theme_set(theme_minimal() +
+            theme(panel.grid.major.x = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  plot.title.position = 'plot'))
+```
+
+```{r data import}
+tdf_winners <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/tdf_winners.csv')
+# stage_data_readr <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/stage_data.csv')
+# use regular read.csv because read_csv imports team and bib number as logical
+stage_data <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/stage_data.csv', stringsAsFactors = F, na.strings = c('NA', "")) %>% 
+  as_tibble()
+tdf_stages <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/tdf_stages.csv')
+```
+
+```{r}
+tdf_stages <- tdf_stages %>% 
+  mutate(Winner = str_replace(Winner, '\\[n 1]', ''))
+
+tdf_winners <- tdf_winners %>% 
+  mutate(year = year(start_date))
+
+tdf_stages <- tdf_stages %>% 
+  mutate(year = year(Date))
+```
+
+```{r}
+tdf_winners <- tdf_winners %>% 
+  mutate(nationality = str_trim(nationality))
+```
+
+
+# EDA
+```{r}
+str(tdf_winners)
+```
+
+```{r}
+str(stage_data)
+```
+
+```{r}
+str(tdf_stages)
+```
+
+```{r}
+tdf_winners %>% 
+  group_by(winner_name) %>% 
+  summarise(wins = n()) %>% 
+  arrange(desc(wins))
+
+tdf_winners %>% 
+  group_by(winner_team) %>% 
+  summarise(wins = n()) %>% 
+  arrange(desc(wins))
+```
+
+```{r}
+tdf_stages %>% 
+  group_by(Winner) %>% 
+  summarise(wins = n()) %>% 
+  arrange(desc(wins))
+```
+
+
+
+```{r}
+stage_wins_winner <- left_join(tdf_winners, tdf_stages, by = c('year', 'winner_name' = 'Winner'))
+```
+
+```{r}
+stage_wins_winner %>%
+  mutate_if(is.character, as_factor) %>% 
+  mutate_if(is.factor, . %>% fct_explicit_na(na_level = 'NA')) %>% 
+  group_by(Type, winner_name) %>% 
+  summarise(wins = n()) %>% 
+  ungroup() %>% 
+  mutate(Type = fct_lump_n(Type, n = 5)) %>% 
+         # winner_name = fct_lump_n(winner_name, n = 10)) %>% 
+  # filter(winner_name != 'Other') %>% 
+  mutate(winner_name = reorder_within(winner_name, wins, Type)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_name, wins), stat = 'identity') +
+  coord_flip() +
+  scale_x_reordered() +
+  facet_wrap(~ Type, scales = 'free')
+```
+
+```{r}
+tdf_winners %>% 
+  filter(str_detect(winner_name, 'Miguel'))
+```
+
+```{r}
+tdf_winners %>% 
+  unite('winner_year', c('winner_name', 'year')) %>% 
+  select(winner_year, stage_wins, stages_led) %>% 
+  mutate(winner_year = fct_reorder(winner_year, stages_led),
+         stage_wins = as_factor(stage_wins)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_year, stages_led, fill = stage_wins), stat = 'identity') +
+  coord_flip() +
+  scale_fill_brewer(palette = 'GnBu')
+```
+
+```{r}
+tdf_winners %>% 
+  filter(stage_wins <= (stages_led + 3) & stage_wins >= (stages_led - 3)) %>% 
+  unite('winner_year', c('winner_name', 'year')) %>% 
+  mutate(winner_year = fct_reorder(winner_year, stages_led),
+         stage_wins = as_factor(stage_wins)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_year, stages_led, fill = stage_wins), stat = 'identity') +
+  coord_flip() +
+  scale_fill_brewer(palette = 'GnBu')
+```
+
+```{r}
+tdf_winners %>%
+  mutate(winner_team = case_when(winner_team == nationality ~ 'National',
+                                TRUE ~ winner_team)) %>%
+  group_by(winner_team) %>%
+  summarise(wins = n()) %>%
+  ungroup() %>% 
+  mutate(winner_team = fct_reorder(winner_team, wins)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_team, wins), stat = 'identity') +
+  coord_flip()
+  # facet_wrap(~ nationality, scales = 'free') +
+  # scale_x_reordered() 
+```
+
+```{r}
+tdf_winners %>%
+  mutate(winner_team = case_when(winner_team == nationality ~ 'National',
+                                TRUE ~ winner_team)) %>%
+  group_by(winner_team, nationality) %>%
+  summarise(wins = n()) %>%
+  ungroup() %>% 
+  mutate(winner_team = reorder_within(winner_team, wins, nationality)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_team, wins, fill = nationality), stat = 'identity') +
+  coord_flip()
+```
+
+```{r}
+tdf_winners %>%
+  mutate(winner_team = case_when(winner_team == nationality ~ 'National',
+                                TRUE ~ winner_team)) %>%
+  group_by(winner_team, nationality) %>%
+  summarise(wins = n()) %>%
+  ungroup() %>% 
+  mutate(winner_team = reorder_within(winner_team, wins, nationality)) %>% 
+  ggplot() +
+  geom_bar(aes(winner_team, wins, fill = nationality), stat = 'identity') +
+  coord_flip() +
+  scale_x_reordered() +
+  facet_wrap(~ nationality, scales = 'free_y') +
+  geom_text(aes(winner_team, wins, label = wins), color = 'white', hjust = 1.1) +
+  theme(legend.position = 'none')
+```
+
+```{r}
+
+```
+
