@@ -1,0 +1,110 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(maps)
+
+theme_set(theme_minimal())
+# plants <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/plants.csv')
+actions <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/actions.csv')
+threats <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/threats.csv')
+```
+
+```{r}
+# combine actions and threats to create better plants
+
+# less rows but not what is needed:
+# actions %>% 
+#   mutate(threat_type = rep(NA, times = nrow(actions)),
+#          threatened = rep(NA, times = nrow(actions))) -> actions_to_join
+# 
+# actions_to_join
+# 
+# threats %>% 
+#   mutate(action_type = rep(NA, times = nrow(threats)),
+#          action_taken = rep(NA, times = nrow(threats))) -> threats_to_join
+# 
+# threats_to_join
+# 
+# plants <- bind_rows(actions_to_join, threats_to_join)
+# 
+# plants
+# 
+# plants %>% 
+#   summary()
+
+actions %>% 
+  left_join(threats, by = c("binomial_name", "country", "continent", "group", "year_last_seen", "red_list_category")) -> plants
+
+plants %>% 
+  mutate(country = case_when(
+   country == 'Saint Helena, Ascension and Tristan da Cunha' ~ 'Saint Helena',
+   TRUE ~ as.character(country)
+  )) -> plants
+
+plants
+```
+
+```{r}
+# create map dataframe
+world_map <- map_data('world') %>% 
+  select(lon = long, lat, map_group = group, id = region)
+
+head(world_map)
+
+# finding name differences
+# world_map %>% 
+#   select(id) %>% 
+#   filter(str_detect(id, "^Saint")) %>% 
+#   distinct()
+
+world_map %>% 
+  mutate(id = case_when(
+    id == 'USA' ~ 'United States',
+    id == 'Democratic Republic of the Congo' ~ 'Congo',
+    TRUE ~ as.character(id)
+  )) %>% 
+  add_row(lon = 130.10, lat = 25.06, map_group = max(world_map$map_group) + 1, id = 'Pitcairn') -> world_map
+
+plants %>% 
+  full_join(world_map, by = c('country' = 'id')) %>% 
+  mutate(in_data = if_else(is.na(binomial_name), 'no', 'yes'))  -> plant_map
+
+plant_map %>% 
+  filter(country == 'UK')
+
+plant_map %>% 
+  select(country, lon, lat, map_group, in_data) %>% 
+  distinct() %>% 
+  ggplot(aes(lon, lat, group = map_group)) +
+  geom_polygon(color = 'grey50', aes(fill = in_data)) +
+  coord_quickmap() +
+  theme(legend.position = 'none',
+        axis.title = element_blank())
+```
+
+```{r}
+library(leaflet)
+
+plant_map %>% 
+  select(country, lon, lat, map_group, in_data) %>% 
+  distinct() -> base_map
+
+leaflet(base_map) %>% 
+  addProviderTiles(providers$Stamen.TonerLite,
+                             options = providerTileOptions(noWrap = TRUE)) %>% 
+  addMarkers(~lon, ~lat, popup = ~as.character(in_data), label = as.character(~country))
+
+```
+
+```{r}
+plant_map %>% 
+  select(country, lon, lat, map_group, in_data) %>% 
+  distinct()
+```
+

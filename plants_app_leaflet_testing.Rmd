@@ -1,0 +1,145 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(leaflet) 
+library(here)
+library(rvest)
+library(jsonlite)
+library(FRK)
+```
+
+```{r}
+# data from https://developers.google.com/public-data/docs/canonical/countries_csv
+# copied and pasted into text file then saved
+countries <- read_delim(here('plant_map/data/countries.csv'), delim = '\t')
+```
+
+
+```{r}
+# plants <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/plants.csv')
+actions <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/actions.csv')
+threats <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/threats.csv')
+
+actions %>% 
+  left_join(threats, by = c("binomial_name", "country", "continent", "group", "year_last_seen", "red_list_category")) -> plants
+
+plants %>% 
+  mutate(country = case_when(
+   country == 'Saint Helena, Ascension and Tristan da Cunha' ~ 'Saint Helena',
+   country == 'Viet Nam' ~ 'Vietnam',
+   TRUE ~ as.character(country)
+  )) -> plants
+
+plants
+```
+
+```{r}
+countries %>% 
+  select(-country) %>% 
+  select(country = name, latitude, longitude) %>% 
+  add_row(country = 'Sao Tome and Principe',
+          latitude = 0.1864,
+          longitude = 6.66131) %>% 
+  mutate(country = case_when(
+    country == 'Pitcairn Islands' ~ 'Pitcairn',
+    country == 'Congo [DRC]' ~ 'Congo',
+    country == 'Myanmar [Burma]' ~ 'Myanmar',
+    country == 'Cape Verde' ~ 'Cabo Verde',
+    TRUE ~ as.character(country)
+  )) -> countries
+
+countries
+
+plants %>% 
+  full_join(countries, by = 'country') %>% 
+  mutate(in_data = if_else(is.na(binomial_name), 'no', 'yes'))  -> plant_map
+
+# check for mismatches
+plant_map %>% 
+  select(country, latitude, longitude, in_data) %>% 
+  filter(in_data == 'yes', 
+         is.na(latitude)) %>% 
+  distinct()
+
+
+```
+
+```{r}
+test <- plant_map %>% 
+  select(country, latitude, longitude, in_data) %>% 
+  distinct()
+
+leaflet(test) %>% 
+            addProviderTiles(providers$Stamen.TonerLite,
+                             options = providerTileOptions(noWrap = TRUE)) %>%
+            addMarkers(~longitude, ~latitude, popup = ~as.character(in_data), label = ~country)
+```
+
+```{r}
+states <- geojsonio::geojson_read('json/us-states.geojson', what = 'sp')
+```
+
+# geojson data
+
+```{r}
+world_map <- geojsonio::geojson_read(here('plant_map/data/custom.geo.json'), what = 'sp')
+```
+
+```{r}
+pal = colorNumeric(
+  palette = 'Blues',
+  domain = world_map$gdp_md_est
+)
+```
+
+```{r}
+leaflet(world_map) %>% 
+  addPolygons(stroke = FALSE, smoothFactor = 0.2, fillOpacity = 1, color = ~pal(gdp_md_est))
+```
+
+```{r}
+world_map$gdp_md_est
+
+world_map$admin
+```
+
+```{r}
+world_map %>% 
+  as_tibble()
+```
+
+```{r}
+world_map_low_res <- geojsonio::geojson_read(here('plant_map/data/world_low_res.geo.json'), what = 'sp')
+```
+
+```{r}
+world_map_low_res %>% 
+  as_tibble() -> test
+```
+
+```{r}
+plants %>% 
+  select(country, binomial_name) %>% 
+  distinct() %>% 
+  full_join(test, by = c('country' = 'name')) %>% 
+  mutate(in_data = if_else(is.na(binomial_name), 'no', 'yes'))  -> plant_map
+
+plant_map %>% 
+  mutate(name = country) %>% 
+  select(-country, -binomial_name) %>% 
+  df_to_SpatialPolygons()
+```
+
+```{r}
+unique(plant_map$country) %in% world_map_low_res$name
+
+
+world_map_low_res$in_data <- unique(plant_map$country) %in% world_map_low_res$name
+```
+

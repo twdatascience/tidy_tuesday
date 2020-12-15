@@ -1,0 +1,194 @@
+---
+title: "Extinct Plants"
+author: "Tyler Wilson"
+date: "8/18/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+theme_set(theme_minimal())
+```
+
+```{r}
+plants <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/plants.csv')
+actions <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/actions.csv')
+threats <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-18/threats.csv')
+```
+
+```{r}
+plants %>% 
+  pivot_longer(c(-binomial_name, -country, -continent, -group, -year_last_seen, -red_list_category), names_to = 'threat', values_to = 'present') %>% 
+  filter(present == 1) %>% 
+  select(-present) %>% 
+  separate(threat, into = c('type', 'descriptor'), sep = '_') %>% 
+  mutate_if(is.character, as_factor) -> plants_long
+
+plants_long
+
+plants_long %>% 
+  summary()
+```
+
+```{r}
+actions %>% 
+  pivot_wider(id_cols = c(binomial_name, country, continent, group, year_last_seen, red_list_category), names_from = action_type, values_from = action_taken) %>%
+  janitor::clean_names() -> actions_sparse
+
+actions_sparse
+  
+actions_sparse %>% 
+  pivot_longer(c(-binomial_name, -country, -continent, -group, -year_last_seen, -red_list_category), names_to = 'action_type', values_to = 'action_taken') %>% 
+  filter(action_taken == 1) %>% 
+  select(-action_taken) %>% 
+  mutate(action_abrv = case_when(
+    action_type == 'land_water_protection' ~ 'LWP',
+    action_type == 'species_management' ~ 'SM',
+    action_type == 'law_policy' ~ 'LP',
+    action_type == 'research_monitoring' ~ 'RM',
+    action_type == 'education_awareness' ~ 'EA',
+    action_type == 'unknown' ~ 'NA',
+    TRUE ~ NA_character_
+  )) %>% 
+  mutate_if(is.character, as_factor)  -> actions_long
+
+actions_long
+
+actions_long %>% 
+  summary()
+```
+
+```{r}
+threats %>% 
+  mutate(type_abrv = case_when(
+  threat_type == "Agriculture & Aquaculture" ~ "AA",
+  threat_type == "Biological Resource Use" ~ "BRU",
+  threat_type == "Commercial Development" ~ "RCD",
+  threat_type == "Invasive Species" ~ "ISGD",
+  threat_type == "Energy Production & Mining" ~ "EPM",
+  threat_type == "Climate Change" ~ "CC",
+  threat_type == "Human Intrusions" ~ "HID",
+  threat_type == "Pollution" ~ "P",
+  threat_type == "Transportation Corridor" ~ "TS",
+  threat_type == "Natural System Modifications" ~ "NSM",
+  threat_type == "Geological Events" ~ "GE",
+  threat_type == "Unknown" ~ "NA",
+  TRUE ~ NA_character_
+  )) %>% 
+  filter(threatened == 1) %>% 
+  select(-threatened) %>% 
+  mutate_if(is.character, as_factor) -> threats_clean
+
+threats_clean
+```
+
+```{r}
+threats_clean %>% 
+  group_by(binomial_name) %>% 
+  summarise(num_threats = n()) %>% 
+  arrange(desc(num_threats))
+
+threats_clean %>% 
+  group_by(threat_type) %>% 
+  summarise(threat_count = n()) %>% 
+  arrange(desc(threat_count)) -> threat_counts
+
+threat_counts
+
+threat_counts %>% 
+  mutate(threat_type = fct_reorder(threat_type, threat_count)) %>% 
+  ggplot(aes(threat_type, threat_count)) +
+  geom_bar(stat = 'identity') +
+  coord_flip()
+```
+
+```{r}
+plants_long %>% 
+  group_by(descriptor, type) %>% 
+  summarise(descriptor_count = n()) %>%
+  mutate(descriptor = as_factor(na_if(as.character(descriptor), 'NA'))) %>% 
+  na.omit() %>% 
+  arrange(desc(descriptor_count)) -> plants_descriptor_c
+
+plants_descriptor_c
+
+threats_clean %>% 
+  group_by(threat_type, type_abrv) %>% 
+  summarise(count = n()) -> threat_key
+
+actions_long %>% 
+  group_by(action_type, action_abrv) %>% 
+  summarise(count = n()) -> action_key
+
+plants_descriptor_c %>% 
+  ungroup() %>% 
+  left_join(threat_key, by = c('descriptor' = 'type_abrv')) %>% 
+  left_join(action_key, by = c('descriptor' = 'action_abrv')) %>% 
+  select(-count.x, -count.y) %>% 
+  mutate(full_name = as_factor(janitor::make_clean_names(str_replace(paste(threat_type, action_type), 'NA', '')))) %>% 
+  select(-threat_type, -action_type) %>% 
+  mutate(full_name = as_factor(str_to_title(str_replace(as.character(full_name), '_', ' ')))) %>% 
+  mutate(full_name = fct_reorder(full_name, descriptor_count)) %>%
+  ggplot(aes(full_name, descriptor_count, fill = type)) +
+  geom_bar(stat = 'identity') +
+  geom_text(aes(label = descriptor_count), nudge_y = ifelse(plants_descriptor_c$descriptor_count > 10, -5 * log10(plants_descriptor_c$descriptor_count), 5)) +
+  coord_flip() +
+  scale_fill_brewer(type = 'qual', palette = 2, direction = -1, labels = str_to_title) +
+  labs(x = '',
+       y = '',
+       fill = 'Type') +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+```{r}
+cols_id = c('binomial_name', 'country', 'continent', 'group', 'year_last_seen', 'red_list_category', 'type', 'descriptor')
+cols_threat = c('binomial_name', 'country', 'continent', 'group', 'year_last_seen', 'red_list_category', 'type', 'descriptor', 'threat_type')
+cols_action = c('binomial_name', 'country', 'continent', 'group', 'year_last_seen', 'red_list_category', 'type', 'descriptor', 'action_type')
+
+plants_long %>% 
+  left_join(threat_key, by = c('descriptor' = 'type_abrv')) %>% 
+  left_join(action_key, by = c('descriptor' = 'action_abrv')) %>% 
+  select(-count.x, -count.y) %>% 
+  pivot_wider(id_cols = all_of(cols_id), names_from = c(threat_type, action_type), values_from = c(threat_type, action_type), values_fn = function(x) ifelse(is.character(x), 0, 1)) %>% 
+  janitor::clean_names() %>% 
+  pivot_longer(cols = -cols_id, names_to = 'name', values_to = 'value') %>% 
+  na.omit() %>% 
+  mutate(name = str_remove(name, 'threat_type_|action_type_')) %>% 
+  mutate(name = str_remove(name, 'na')) %>%
+  mutate(name = str_replace(name, '^_|_$', '')) %>% 
+  select(-value) %>% 
+  distinct() -> plants_clean
+```
+
+```{r}
+plants_clean %>% 
+  group_by(country) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  top_n(16) %>% 
+  mutate(country = fct_reorder(country, count)) %>% 
+  ggplot(aes(country, count)) +
+  geom_col() +
+  coord_flip()
+```
+
+```{r}
+library(maps)
+world_map <- map_data('world') %>% 
+  select(lon = long, lat, group, id = region)
+
+head(world_map)
+
+world_map %>% 
+  ggplot(aes(lon, lat, group = group)) +
+  geom_polygon(fill = 'white', color = 'grey50') +
+  coord_quickmap()
+```
+
+# test out shiny app, the following is testing:
+# changed to separate notebook
+
+

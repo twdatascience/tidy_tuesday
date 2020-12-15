@@ -1,0 +1,72 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(leaflet)
+library(here)
+library(rvest)
+library(jsonlite)
+library(tidyverse)
+```
+
+```{r}
+states_html <- read_html('https://leafletjs.com/examples/choropleth/us-states.js')
+```
+
+```{r}
+states_json <- states_html %>% 
+  html_node('p') %>% 
+  html_text()
+
+states_json %>% 
+  str_remove('var statesData = ') %>% 
+  str_remove(';$')-> states_json
+
+states <- fromJSON(states_json)
+```
+
+```{r}
+states <- geojsonio::geojson_sp(states_json)
+```
+
+```{r}
+names(states)
+```
+
+```{r}
+m <- leaflet(states) %>% 
+  setView(-96, 37.8, 4) %>% 
+  addProviderTiles('MapBox',
+                   options = providerTileOptions(
+                     id = 'mapbox.light',
+                     accessToken = Sys.getenv('pk.eyJ1IjoidHlsZXJ3aWxzb24tZGF0YXNjaWVuY2UiLCJhIjoiY2tlaGg2ZTQ4MG92YzJwbW5rcmJia3BxcCJ9.vTAB8xZ2tXavaj2yNLcxWQ')
+                   ))
+
+m %>% addPolygons()
+```
+
+
+```{r}
+world_map <- geojsonio::geojson_read(here('plant_map/data/custom.geo.json'), what = 'sp')
+```
+
+```{r}
+m <- leaflet(world_map) %>% 
+  setView(-96, 37.8, 4) %>% 
+  addProviderTiles('MapBox',
+                   options = providerTileOptions(
+                     id = 'mapbox.light',
+                     accessToken = Sys.getenv('pk.eyJ1IjoidHlsZXJ3aWxzb24tZGF0YXNjaWVuY2UiLCJhIjoiY2tlaGg2ZTQ4MG92YzJwbW5rcmJia3BxcCJ9.vTAB8xZ2tXavaj2yNLcxWQ')
+                   ))
+
+m %>% addPolygons()
+```
+
+```{r}
+bins <- c()
+```
+

@@ -1,0 +1,194 @@
+---
+title: "Palmer Penguins Analysis"
+author: "Tyler Wilson"
+date: "8/8/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(tidymodels)
+library(class)
+
+theme_set(theme_minimal())
+```
+
+```{r}
+penguins <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-28/penguins.csv')
+
+penguins_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-28/penguins_raw.csv')
+```
+
+```{r}
+penguins <- penguins %>% 
+  mutate_if(is_character, as_factor)
+
+penguins %>% 
+  summary()
+```
+
+```{r}
+penguins_raw %>% 
+  mutate_if(is_character, as_factor) %>% 
+  clean_names() %>% 
+  mutate(comments = as.character(comments)) -> penguins_all_clean
+
+penguins_all_clean %>% 
+  select(-sample_number, -region, -stage, -comments, -individual_id, -date_egg) -> use_penguins
+```
+
+```{r}
+use_penguins %>% 
+  separate(species,  c('name', 'species_name'), '\\(')%>% 
+  mutate(species_name = as_factor(str_remove(species_name, '\\)')),
+         name = as_factor(str_remove(name, ' Penguin '))) -> clean_penguins
+```
+
+```{r}
+clean_penguins %>% 
+  select(which(sapply(., class) == 'numeric'), name, sex) %>% 
+  pivot_longer(c(-name, -sex), names_to = 'key', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values)) +
+  geom_histogram(aes(fill = name), alpha = .5, position = 'identity') +
+  facet_wrap(~ key + sex, ncol = 2, scales = 'free')
+
+clean_penguins %>% 
+  select(which(sapply(., class) == 'numeric'), name, sex) %>% 
+  pivot_longer(c(-name, -sex), names_to = 'key', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values)) +
+  geom_density(aes(fill = name), alpha = .5, position = 'identity') +
+  facet_wrap(~ key + sex, ncol = 3, scales = 'free')
+
+
+clean_penguins %>% 
+  select(which(sapply(., class) == 'numeric'), name, sex) %>% 
+  pivot_longer(c(-name, -sex), names_to = 'key', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values)) +
+  geom_histogram(aes(fill = sex), alpha = .5, position = 'identity') +
+  facet_wrap(~ key + name, ncol = 3, scales = 'free')
+
+clean_penguins %>% 
+  select(which(sapply(., class) == 'numeric'), name, sex) %>% 
+  pivot_longer(c(-name, -sex), names_to = 'key', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values)) +
+  geom_density(aes(fill = sex), alpha = .5, position = 'identity') +
+  facet_wrap(~ key + name, ncol = 3, scales = 'free')
+```
+
+```{r}
+library(GGally)
+ggpairs(clean_penguins, aes(color = name))
+```
+
+```{r}
+clean_penguins %>% 
+  ggplot(aes(culmen_length_mm, culmen_depth_mm)) +
+  geom_point(aes(color = name, shape = sex))
+```
+
+
+```{r}
+clean_penguins %>% 
+  ggplot(aes(culmen_length_mm, body_mass_g)) +
+  geom_point(aes(color = name, shape = sex))
+```
+
+```{r}
+clean_penguins %>% 
+  select(name, sex, culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, delta_15_n_o_oo, delta_13_c_o_oo) %>% 
+  rename(blood_n = delta_15_n_o_oo,
+         blood_c = delta_13_c_o_oo) %>% 
+  pivot_longer(c(-name, -sex, -blood_n), names_to = 'measure', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values, blood_n, color = name, shape = sex)) +
+  geom_point() +
+  facet_wrap(~ measure + sex, ncol = 2, scales = 'free')
+  
+
+clean_penguins %>% 
+  select(name, sex, culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g, delta_15_n_o_oo, delta_13_c_o_oo) %>% 
+  rename(blood_n = delta_15_n_o_oo,
+         blood_c = delta_13_c_o_oo) %>% 
+  pivot_longer(c(-name, -sex, -blood_c), names_to = 'measure', values_to = 'values') %>% 
+  na.omit() %>% 
+  ggplot(aes(values, blood_c, color = name, shape = sex)) +
+  geom_point() +
+  facet_wrap(~ measure, ncol = 2, scales = 'free')
+```
+
+# Predict missing sex
+```{r}
+clean_penguins %>% 
+  filter(sex != 'NA') -> penguin_sex
+
+clean_penguins %>% 
+  filter(is.na(sex)) -> na_penguins
+
+set.seed(555)
+
+data_split <- initial_split(na.omit(penguin_sex), prop = 3/4)
+
+train_set <- training(data_split)
+test_set <- testing(data_split)  
+```
+
+```{r}
+library(kknn)
+knn_mod <- nearest_neighbor() %>% 
+  set_engine('kknn') %>% 
+  set_mode('classification') %>% 
+  translate()
+
+knn_mod
+```
+
+```{r}
+knn_fit <- knn_mod %>% 
+  fit(sex ~ ., data = train_set)
+
+
+knn_fit
+```
+
+```{r}
+predict(knn_fit, test_set)
+```
+
+```{r}
+test_pred <- predict(knn_fit, test_set) %>% 
+  bind_cols(test_set %>% select(sex, name))
+
+test_pred
+```
+
+```{r}
+test_pred <- predict(knn_fit, test_set, type = 'prob') %>% 
+  bind_cols(test_set %>% select(sex, name))
+
+test_pred
+  
+test_pred %>% 
+  roc_curve(truth = sex, .pred_MALE) %>% 
+  autoplot()
+
+test_pred %>% 
+  roc_curve(truth = sex, .pred_FEMALE) %>% 
+  autoplot()
+
+test_pred %>% 
+  roc_auc(truth = sex, .pred_MALE)
+```
+
+```{r}
+na_pred <- predict(knn_fit, na_penguins) %>% 
+  bind_cols(na_penguins %>% select(-sex) %>% na.omit())
+
+na_pred
+```
+
+# predict sex without blood test

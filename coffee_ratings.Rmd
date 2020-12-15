@@ -1,0 +1,38 @@
+---
+title: "Coffee Ratings"
+author: "Tyler Wilson"
+date: "8/8/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+coffee_ratings <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-07/coffee_ratings.csv')
+```
+
+```{r}
+coffee_ratings <- coffee_ratings %>% 
+  select(-certification_address, -certification_contact, -lot_number, -ico_number, -grading_date, -expiration) %>% 
+  mutate_if(is_character, as_factor)
+```
+
+```{r}
+coffee_ratings %>% 
+  summary()
+```
+
+```{r}
+coffee <- coffee_ratings %>% 
+  select(total_cup_points, species, region, number_of_bags, bag_weight, harvest_year, variety, processing_method, aroma, flavor, aftertaste, acidity, body, balance, uniformity, clean_cup, sweetness, cupper_points, moisture, category_one_defects, category_two_defects, quakers, color)
+```
+
+```{r}
+coffee %>% 
+  ggplot(aes(variety, total_cup_points)) +
+  geom_point(aes(color = species)) +
+  coord_flip()
+```
+
