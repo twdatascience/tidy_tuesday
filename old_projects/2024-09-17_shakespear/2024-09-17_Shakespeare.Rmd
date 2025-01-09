@@ -1,0 +1,89 @@
+---
+title: "2024-09-17"
+subtitle: 
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup}
+library(tidyverse)
+library(rlang)
+
+tuesdata <- tidytuesdayR::tt_load('2024-09-17')
+hamlet <- tuesdata$hamlet
+macbeth <- tuesdata$macbeth
+romeo_juliet <- tuesdata$romeo_juliet
+```
+
+```{r}
+ham_cols <- hamlet |> 
+  select(!c(dialogue, line_number)) |> 
+  colnames()
+
+summary_list <- list()
+for (col_name in ham_cols) {
+  new_col <- paste0(col_name, "_count")
+  summary_list[[new_col]] = hamlet |> 
+    group_by(!!rlang::sym(col_name)) |> 
+    summarise(count = n()) |> 
+    ungroup() |>
+    mutate(!!sym(new_col) := paste0(!!sym(col_name), "_", as.character(count))) |> 
+    select(!c(!!rlang::sym(col_name), count))
+}
+
+summary_list_tibbles <- list()
+for (col_name in ham_cols) {
+  new_col <- paste0(col_name, "_count")
+  summary_list_tibbles[[new_col]] = hamlet |> 
+    group_by(!!rlang::sym(col_name)) |> 
+    summarise(count = n()) |> 
+    ungroup()
+}
+```
+
+
+```{r}
+summarytools::dfSummary(hamlet)
+```
+
+```{r}
+# library(ggsankey)
+source("sankey.R")
+```
+
+```{r}
+df <- hamlet |> 
+  make_long(act, scene, character, node_order = c("act", "scene", "character"))
+  
+  
+
+ggplot(df, aes(x = x, 
+               next_x = next_x, 
+               node = node, 
+               next_node = next_node,
+               fill = factor(node))) +
+  geom_sankey()
+```
+
+```{r}
+df |> 
+  ggplot(aes(x = x, 
+             next_x = next_x, 
+             node = node, 
+             next_node = next_node, 
+             fill = factor(node), 
+             label = node)) +
+  geom_sankey(flow.alpha = .6,
+              node.color = "gray30") +
+    theme(legend.position = "none",
+        plot.title = element_text(hjust = .5))
+
+
+  geom_sankey_label(size = 3, color = "white", fill = "gray40") +
+  scale_fill_viridis_d(drop = FALSE) +
+  theme_sankey(base_size = 18) +
+  labs(x = NULL) +
+
+```
