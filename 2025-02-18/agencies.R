@@ -40,9 +40,6 @@ agencies <- tuesdata$agencies
 # explore data
 glimpse(agencies)
 
-agencies |>
-  filter(state_abbr == "CO")
-
 # which counties have the most agencies?
 agencies |>
   group_by(state, county) |>
