@@ -1,9 +1,43 @@
 library(tidyverse)
+library(patchwork)
+library(sf)
+library(tigris)
 
+# functions
+county_agg <- function(df_big, df_filter) {
+  out1 <- df_big |>
+    filter(
+      state == df_filter$state & county == df_filter$county,
+      is_nibrs == TRUE
+    )
+  out2 <- df_big |>
+    filter(
+      state == df_filter$state & county == df_filter$county,
+      is_nibrs == FALSE
+    )
+  return(c(nrow(out1), nrow(out2)))
+}
+
+state_agg <- function(df_big, df_filter) {
+  out1 <- df_big |>
+    filter(
+      state == df_filter$state,
+      is_nibrs == TRUE
+    )
+  out2 <- df_big |>
+    filter(
+      state == df_filter$state,
+      is_nibrs == FALSE
+    )
+  return(c(nrow(out1), nrow(out2)))
+}
+
+# set up
 tuesdata <- tidytuesdayR::tt_load('2025-02-18')
 
 agencies <- tuesdata$agencies
 
+# explore data
 glimpse(agencies)
 
 agencies |>
@@ -28,6 +62,8 @@ agencies |>
   select(state, county, is_nibrs) |>
   arrange(state, county)
 
+# look at which counties have highest/lowest percentage of agencies reporting to NIBRS
+
 # combine counties with commas to link with geo data later
 state_counties <- agencies |>
   select(state, county, state_abbr) |>
@@ -35,19 +71,7 @@ state_counties <- agencies |>
   arrange(state, county) |>
   unique()
 
-county_agg <- function(df_big, df_filter) {
-  out1 <- df_big |>
-    filter(
-      state == df_filter$state & county == df_filter$county,
-      is_nibrs == TRUE
-    )
-  out2 <- df_big |>
-    filter(
-      state == df_filter$state & county == df_filter$county,
-      is_nibrs == FALSE
-    )
-  return(c(nrow(out1), nrow(out2)))
-}
+# create a new tibble for aggregated data
 df <- tibble(
   state = character(),
   county = character(),
@@ -67,7 +91,30 @@ for (i in 1:nrow(state_counties)) {
   df <- bind_rows(df, df_new)
 }
 
-# create legend for later
+# Get county boundaries
+counties <- counties(cb = TRUE)
+
+df <- df |>
+  mutate(county = str_remove(county, "REGION"))
+
+counties <- counties |>
+  mutate(NAME = str_to_upper(str_remove(NAME, "\\.")))
+
+counties_merged <- counties %>%
+  full_join(
+    df,
+    by = join_by(STUSPS == state_abbr, NAME == county),
+    relationship = "many-to-many"
+  ) |>
+  # remove "Not Specified" counties and anything that doesn't have a geometry
+  filter(!is.na(state))
+
+
+# Make Maps
+# used this blog as reference for legends:
+# https://www.andrewheiss.com/blog/2025/02/19/ggplot-histogram-legend/#bonus-2-use-a-diverging-color-scheme-nested-legend-circles
+
+# legend plot
 county_legend <- df |>
   mutate(percent = in_nibrs / (in_nibrs + not_nibrs)) |>
   ggplot() +
@@ -80,7 +127,6 @@ county_legend <- df |>
   ) +
   scale_fill_stepsn(
     colors = scales::viridis_pal(option = "A")(9),
-    # colours = scales::brewer_pal(palette = "Blues", direction = -1)(9),
     breaks = 1:10 / 10,
     guide = "none"
   ) +
@@ -99,35 +145,7 @@ county_legend <- df |>
     axis.title.y = element_blank()
   )
 
-
-# map? chloropleth?
-library(sf)
-library(tigris)
-
-# Get county boundaries
-counties <- counties(cb = TRUE)
-
-# Example data (replace with your actual data)
-# county_data <- data.frame(
-# GEOID = counties$GEOID
-# value = runif(nrow(counties))
-# )
-
-df <- df |>
-  mutate(county = str_remove(county, "REGION"))
-
-counties <- counties |>
-  mutate(NAME = str_to_upper(str_remove(NAME, "\\.")))
-# Merge data
-counties_merged <- counties %>%
-  full_join(
-    df,
-    by = join_by(STUSPS == state_abbr, NAME == county),
-    relationship = "many-to-many"
-  ) |>
-  # remove Not specifieds and anything that doesn't have a geometry
-  filter(!is.na(state))
-# Create map
+# county map
 county_map <- counties_merged |>
   mutate(percent = in_nibrs / (in_nibrs + not_nibrs)) |>
   ggplot() +
@@ -138,7 +156,6 @@ county_map <- counties_merged |>
   ) +
   scale_fill_stepsn(
     colors = scales::viridis_pal(option = "A")(9),
-    # colours = scales::brewer_pal(palette = "Blues", direction = -1)(9),
     breaks = 1:10 / 10,
     guide = "none"
   ) +
@@ -149,8 +166,6 @@ county_map <- counties_merged |>
     plot.title = element_text(face = "bold", hjust = 0.13, size = rel(1.4))
   )
 
-library(patchwork)
-
 county_map +
   inset_element(
     county_legend,
@@ -160,24 +175,13 @@ county_map +
     top = 0.3
   )
 
-# state chloropleth
+# look at which states have highest/lowest percentage of agencies reporting to NIBRS
+
 states_data <- agencies |>
   select(state, state_abbr) |>
   arrange(state) |>
   unique()
-state_agg <- function(df_big, df_filter) {
-  out1 <- df_big |>
-    filter(
-      state == df_filter$state,
-      is_nibrs == TRUE
-    )
-  out2 <- df_big |>
-    filter(
-      state == df_filter$state,
-      is_nibrs == FALSE
-    )
-  return(c(nrow(out1), nrow(out2)))
-}
+
 df2 <- tibble(
   state = character(),
   county = character(),
@@ -205,6 +209,7 @@ states_merged <- states |>
   ) |>
   # remove rows not in agency data
   filter(!is.na(state))
+
 # Create map
 # states legend
 states_legend <- df2 |>
