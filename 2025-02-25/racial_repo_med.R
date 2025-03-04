@@ -127,3 +127,42 @@ weighted_american_journal |>
   scale_fill_viridis_d(option = "B") +
   theme_minimal() +
   labs(x = "Year", y = "Relative use", fill = "Sentiment")
+
+
+weighted_american_journal2 <- article_dat |>
+  filter(journal == "American journal of obstetrics and gynecology") |>
+  group_by(journal, year) |>
+  unnest_tokens(word, abstract) |>
+  ungroup() |>
+  inner_join(
+    get_sentiments("nrc"),
+    relationship = "many-to-many",
+    by = join_by(word)
+  ) |>
+  count(year, journal, sentiment) |>
+  ungroup() |>
+  left_join(norm_mult, by = "year") |>
+  group_by(year) |>
+  mutate(
+    min_n = min(n) * n_year,
+    max_min = (max(n) - min(n)) * n_year,
+    normalized_value = (n - min_n) / max_min
+  ) %>%
+  ungroup()
+
+weighted_american_journal2 |>
+  ggplot(aes(
+    x = as.factor(year),
+    y = normalized_value,
+    fill = as.factor(sentiment)
+  )) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    color = "black",
+    linewidth = 0.1
+  ) +
+  facet_wrap(~sentiment, nrow = 2) +
+  scale_fill_viridis_d(option = "B") +
+  theme_minimal() +
+  labs(x = "Year", y = "Relative use", fill = "Sentiment")
