@@ -1,0 +1,3 @@
+[submodule "pokemon_explorer"]
+	path = pokemon_explorer
+	url = https://github.com/twdatascience/pokemon_explorer
